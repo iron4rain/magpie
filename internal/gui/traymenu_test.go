@@ -84,8 +84,8 @@ func TestTrayMenuLabels(t *testing.T) {
 	}
 }
 
-// A language changed on the Settings page relabels the tray menu; a save
-// that leaves it as it was doesn't.
+// A language changed on the Settings page relabels the tray menu and draws
+// its usage cards again; a save that leaves it as it was does neither.
 func TestSettingsLangRelabelsTray(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("HOME", h)
@@ -95,9 +95,10 @@ func TestSettingsLangRelabelsTray(t *testing.T) {
 	if err := settings.Save(settings.Settings{Lang: "en"}); err != nil {
 		t.Fatal(err)
 	}
-	calls := 0
+	calls, redraws := 0, 0
 	onLang = func() { calls++ }
-	t.Cleanup(func() { onLang = nil })
+	onTrayUsage = func() { redraws++ }
+	t.Cleanup(func() { onLang = nil; onTrayUsage = nil })
 	post := func(body string) {
 		rec := httptest.NewRecorder()
 		Handler(nil, nil).ServeHTTP(rec, httptest.NewRequest("POST", "/api/settings", strings.NewReader(body)))
@@ -105,13 +106,13 @@ func TestSettingsLangRelabelsTray(t *testing.T) {
 			t.Fatalf("%d %s", rec.Code, rec.Body)
 		}
 	}
-	post(`{"theme":"dark","lang":"en"}`)
-	if calls != 0 {
-		t.Fatalf("relabelled %d times with the language unchanged", calls)
+	post(`{"theme":"dark","lang":"en","trayUsageEvery":3}`)
+	if calls != 0 || redraws != 0 {
+		t.Fatalf("with the language unchanged: relabelled %d, redrew %d", calls, redraws)
 	}
-	post(`{"theme":"dark","lang":"zh"}`)
-	if calls != 1 {
-		t.Fatalf("relabelled %d times after en → zh, want 1", calls)
+	post(`{"theme":"dark","lang":"zh","trayUsageEvery":3}`)
+	if calls != 1 || redraws != 1 {
+		t.Fatalf("after en → zh: relabelled %d, redrew %d, want 1 and 1", calls, redraws)
 	}
 	if l := trayMenuLabels(trayLang(settings.Load().Lang, systemLang), "1", ""); l.quit != "退出 magpie" {
 		t.Fatalf("after the change the menu reads %+v", l)

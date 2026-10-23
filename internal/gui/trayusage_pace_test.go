@@ -21,12 +21,12 @@ func TestTrayUsagePace(t *testing.T) {
 		{Name: "Weekly", Used: 70, ResetsAt: in(3 * 24 * time.Hour), Span: 7 * 24 * time.Hour},
 	}}
 
-	label, tip := trayUsageText(q, now, false, false)
+	label, tip := trayUsageText("en", q, now, false, false)
 	if label != "42% · 70%" || tip != "Claude\n5-hour 42.2% used · resets in 2h 10m\nWeekly 70% used · resets in 3d 0h" {
 		t.Errorf("pace off: %q %q", label, tip)
 	}
 
-	label, tip = trayUsageText(q, now, false, true)
+	label, tip = trayUsageText("en", q, now, false, true)
 	if label != "42% −14% · 70% +13%" {
 		t.Errorf("used label %q", label)
 	}
@@ -34,7 +34,7 @@ func TestTrayUsagePace(t *testing.T) {
 		t.Errorf("used tip %q, want %q", tip, want)
 	}
 
-	label, tip = trayUsageText(q, now, true, true)
+	label, tip = trayUsageText("en", q, now, true, true)
 	if label != "58% +14% · 30% −13%" {
 		t.Errorf("left label %q", label)
 	}
@@ -43,7 +43,7 @@ func TestTrayUsagePace(t *testing.T) {
 	}
 
 	// each row still fits the menu bar whole, at its widest
-	cells, _, _ := trayUsageView([]provider.SubscriptionQuota{q}, now, false, true)
+	cells, _, _ := trayUsageView("en", []provider.SubscriptionQuota{q}, now, false, true)
 	if len(cells) != 1 || !slices.Equal(cells[0].Rows, []string{"42% −14%", "70% +13%"}) {
 		t.Fatalf("cells %+v", cells)
 	}
@@ -56,7 +56,7 @@ func TestTrayUsagePace(t *testing.T) {
 		{Name: "Credits", Used: 40, ResetsAt: in(time.Hour)},
 		{Name: "Daily", Used: 0, Unlimited: true, ResetsAt: in(time.Hour)},
 	}
-	if label, _ := trayUsageText(q, now, false, true); label != "40% · 0%" {
+	if label, _ := trayUsageText("en", q, now, false, true); label != "40% · 0%" {
 		t.Errorf("unknown span %q", label)
 	}
 

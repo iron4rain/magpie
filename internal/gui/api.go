@@ -1337,9 +1337,15 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			(in.UsageAlert > 0 || in.BalanceAlert > 0 || in.ResetReminder > 0 || in.TurnDoneAlert > 0) && onAlerts != nil {
 			onAlerts()
 		}
-		// the tray menu follows the page's language (#301)
-		if in.Lang != cur.Lang && onLang != nil {
-			onLang()
+		// the tray menu follows the page's language (#301), and so do the
+		// usage cards' words
+		if in.Lang != cur.Lang {
+			if onLang != nil {
+				onLang()
+			}
+			if onTrayUsage != nil {
+				onTrayUsage()
+			}
 		}
 		// an update check that failed, without the proxy set just now, is
 		// tried again through it, not in six hours (#294), and marked so

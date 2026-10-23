@@ -62,10 +62,11 @@ func trayWindows(q provider.SubscriptionQuota) []provider.QuotaWindow {
 }
 
 // trayUsageText is the menu bar's text for a card and the tooltip that
-// spells it out: each window's use, or what is left of it (left), and when
-// it starts again. With pace (settings.TrayPace) each window's Pace number
-// follows its figure, in both, as the Usage page's cards show it.
-func trayUsageText(q provider.SubscriptionQuota, now time.Time, left, pace bool) (label, tip string) {
+// spells it out, in the page's language (lang): each window's use, or what
+// is left of it (left), and when it starts again. With pace
+// (settings.TrayPace) each window's Pace number follows its figure, in both,
+// as the Usage page's cards show it.
+func trayUsageText(lang string, q provider.SubscriptionQuota, now time.Time, left, pace bool) (label, tip string) {
 	if strings.HasPrefix(q.Provider, trayTotal) {
 		return q.Balance, q.Name // trayTotalCard's: its rows, and its tooltip
 	}
@@ -78,7 +79,7 @@ func trayUsageText(q provider.SubscriptionQuota, now time.Time, left, pace bool)
 		if q.Balance == "" {
 			return "", ""
 		}
-		return q.Balance, q.Name + " · " + q.Balance + trayAsOf(q)
+		return q.Balance, q.Name + " · " + q.Balance + trayAsOf(lang, q)
 	}
 	readAt := now
 	if q.ReadAt != nil && !q.ReadAt.After(now) {
@@ -88,36 +89,37 @@ func trayUsageText(q provider.SubscriptionQuota, now time.Time, left, pace bool)
 	for _, w := range ws {
 		used := math.Max(0, math.Min(100, w.Used))
 		n := int(math.Round(used))
-		word := "used"
+		word := "%s used"
 		if left {
 			used = 100 - used
-			n, word = 100-n, "left"
+			n, word = 100-n, "%s left"
 		}
 		pct := fmt.Sprintf("%d%%", n)
 		row, paceNote := pct, ""
 		if p, ok := w.Pace(readAt, now); pace && ok {
 			row = pct + " " + trayPace(p, left)
-			paceNote = " · pace " + trayPace(p, left)
+			paceNote = " · " + trayText(lang, "pace %s", trayPace(p, left))
 		}
 		short = append(short, row)
 		tipPct := pct
 		if used != math.Trunc(used) {
 			tipPct = fmt.Sprintf("%.1f%%", used)
 		}
-		line := w.Name + " " + tipPct + " " + word
+		name := trayWindowName(lang, w.Name)
+		line := name + " " + trayText(lang, word, tipPct)
 		if c := w.Count(left); c != "" {
-			line = w.Name + " " + c + " · " + tipPct + " " + word
+			line = name + " " + c + " · " + trayText(lang, word, tipPct)
 		}
 		line += paceNote
 		if at := resetAt(w, now); !at.IsZero() && at.After(now) {
-			line += " · resets in " + until(at.Sub(now))
+			line += " · " + trayText(lang, "resets in %s", trayUntil(lang, at.Sub(now)))
 		}
 		long = append(long, line)
 	}
 	if len(short) > 2 {
 		short = short[:2]
 	}
-	return strings.Join(short, " · "), q.Name + "\n" + strings.Join(long, "\n") + trayAsOf(q)
+	return strings.Join(short, " · "), q.Name + "\n" + strings.Join(long, "\n") + trayAsOf(lang, q)
 }
 
 // trayPace is a window's Pace number as the Usage page writes it
@@ -142,11 +144,31 @@ func trayPace(p float64, left bool) string {
 // trayAsOf is the tooltip's word that a card stands in for one that
 // couldn't be read just now, and when it was read (the Usage page's
 // "As of …"); nothing for a reading just made.
-func trayAsOf(q provider.SubscriptionQuota) string {
+func trayAsOf(lang string, q provider.SubscriptionQuota) string {
 	if q.AsOf == nil {
 		return ""
 	}
-	return "\nas of " + q.AsOf.Local().Format("Jan 2 15:04") + ", couldn't be read just now"
+	at := q.AsOf.Local().Format(trayDateLayout(lang))
+	return "\n" + trayText(lang, "as of %s, couldn't be read just now", at)
+}
+
+// trayDateLayout is how a tooltip writes a reading's date and time, as the
+// GUI does in each language (intlLang and resetClock in app.js).
+func trayDateLayout(lang string) string {
+	switch lang {
+	case "zh", "zh-TW", "ja":
+		return "1月2日 15:04"
+	case "de":
+		return "2. Jan. 15:04"
+	}
+	return "Jan 2 15:04"
+}
+
+// trayWindowName is a window's name as the page shows it: its own, or the
+// page's translation of the names vendors and plugins give (5 hours,
+// Weekly, Month). A name the page doesn't know stays as it is.
+func trayWindowName(lang, name string) string {
+	return trayText(lang, name)
 }
 
 func resetAt(w provider.QuotaWindow, now time.Time) time.Time {
@@ -159,24 +181,35 @@ func resetAt(w provider.QuotaWindow, now time.Time) time.Time {
 	return time.Time{}
 }
 
-// until says a wait in the largest two units: 3d 4h, 2h 10m, 7m.
-func until(d time.Duration) string {
+// trayUntil says a wait in the largest two units, in the language: 3d 4h,
+// 2h 10m, 7m in English; 3 天 4 小时 and 2 時間 10 分 elsewhere.
+func trayUntil(lang string, d time.Duration) string {
 	d = d.Round(time.Minute)
 	days, hours, mins := int(d/(24*time.Hour)), int(d%(24*time.Hour)/time.Hour), int(d%time.Hour/time.Minute)
+	type units struct{ day, hour, min, sep string }
+	u := map[string]units{
+		"zh":    {" 天", " 小时", " 分钟", " "},
+		"zh-TW": {" 天", " 小時", " 分鐘", " "},
+		"ja":    {" 日", " 時間", " 分", " "},
+		"de":    {" T.", " Std.", " Min.", " "},
+	}[lang]
+	if u.day == "" {
+		u = units{"d", "h", "m", " "}
+	}
 	switch {
 	case days > 0:
-		return fmt.Sprintf("%dd %dh", days, hours)
+		return fmt.Sprintf("%d%s%s%d%s", days, u.day, u.sep, hours, u.hour)
 	case hours > 0:
-		return fmt.Sprintf("%dh %dm", hours, mins)
+		return fmt.Sprintf("%d%s%s%d%s", hours, u.hour, u.sep, mins, u.min)
 	}
-	return fmt.Sprintf("%dm", max(mins, 1))
+	return fmt.Sprintf("%d%s", max(mins, 1), u.min)
 }
 
 // trayUsageCards are the cards settings.TrayUsages names, in its order,
 // among the Usage page's (cached as there), and magpie's own totals it
 // names (trayTotal); one gone is left out. The vendors aren't asked when
 // only totals are named.
-func trayUsageCards(ctx context.Context, ids []string) []provider.SubscriptionQuota {
+func trayUsageCards(ctx context.Context, ids []string, lang string) []provider.SubscriptionQuota {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -196,7 +229,7 @@ func trayUsageCards(ctx context.Context, ids []string) []provider.SubscriptionQu
 			currency, rate = trayCurrency()
 			noCost = settings.Load().TrayNoCost
 		}
-		cards = append(cards, trayTotalCard(id, trayMoney(trayTotalSum(p), noCost), currency, rate))
+		cards = append(cards, trayTotalCard(lang, id, trayMoney(trayTotalSum(p), noCost), currency, rate))
 	}
 	return trayPick(cards, ids, time.Now())
 }
@@ -232,13 +265,13 @@ var trayTotalSum = func(p usage.Period) usage.Totals { return usage.QueryPage(p,
 // over the cost, in the currency Settings says, "+" when some calls had no
 // known price; nothing beneath the tokens when none had one. Its name is
 // the tooltip, which spells out the input, output and cache.
-func trayTotalCard(id string, t usage.Totals, currency string, rate float64) provider.SubscriptionQuota {
-	when := "Today"
+func trayTotalCard(lang, id string, t usage.Totals, currency string, rate float64) provider.SubscriptionQuota {
+	heading := "Today in magpie"
 	if p, _ := trayTotalPeriod(id); p == usage.Week {
-		when = "Last 7 days"
+		heading = "Last 7 days in magpie"
 	}
 	rows := []string{"Σ" + trayCount(t.Tokens()+t.CacheRead+t.CacheWrite)}
-	tip := when + " in magpie\n" + trayTokens(t)
+	tip := trayText(lang, heading) + "\n" + trayTokens(lang, t)
 	if t.Cost > 0 {
 		c := usage.FormatCost(t.Cost, currency, rate)
 		if t.Unpriced > 0 {
@@ -247,9 +280,13 @@ func trayTotalCard(id string, t usage.Totals, currency string, rate float64) pro
 		rows = append(rows, c)
 		tip += "\n≈" + c
 	}
-	tip += fmt.Sprintf("\n%d requests", t.Calls)
+	word := "%d requests"
+	if t.Calls == 1 {
+		word = "%d request"
+	}
+	tip += "\n" + trayText(lang, word, t.Calls)
 	if t.Unpriced > 0 {
-		tip += fmt.Sprintf(", %d with no known price", t.Unpriced)
+		tip += trayText(lang, ", %d with no known price", t.Unpriced)
 	}
 	return provider.SubscriptionQuota{Provider: id, Name: tip, Balance: strings.Join(rows, " · ")}
 }
@@ -275,13 +312,22 @@ func trayCurrency() (currency string, rate float64) {
 }
 
 // trayTokens is a total's every token, the cache's too, with what they
-// were: "6.3M tokens (912K in · 318K out · 5.1M cached)".
-func trayTokens(t usage.Totals) string {
-	s := trayCount(t.Tokens()+t.CacheRead+t.CacheWrite) + " tokens (" + trayCount(t.Input) + " in · " + trayCount(t.Output) + " out"
+// were, in the language: "6.3M tokens (912K in · 318K out · 5.1M cached)".
+func trayTokens(lang string, t usage.Totals) string {
+	s := trayText(lang, "%s tokens (%s in · %s out", trayCount(t.Tokens()+t.CacheRead+t.CacheWrite), trayCount(t.Input), trayCount(t.Output))
 	if cached := t.CacheRead + t.CacheWrite; cached > 0 {
-		s += " · " + trayCount(cached) + " cached"
+		s += trayText(lang, " · %s cached", trayCount(cached))
 	}
-	return s + ")"
+	return s + trayClose(lang)
+}
+
+// trayClose is the bracket the token line closes with, fullwidth where the
+// language writes its brackets so.
+func trayClose(lang string) string {
+	if lang == "zh" || lang == "zh-TW" || lang == "ja" {
+		return "）"
+	}
+	return ")"
 }
 
 // trayIdleTip is the tooltip while the menu bar shows no cards: magpie's
@@ -289,11 +335,11 @@ func trayTokens(t usage.Totals) string {
 // (ylorn on Discord: a Linux bar's tooltip said only "magpie"): every
 // token, split into input, output and cache as the usage:today card's
 // tooltip does (NextCommit on Discord), then the cost and the requests.
-func trayIdleTip(t usage.Totals, currency string, rate float64) string {
+func trayIdleTip(lang string, t usage.Totals, currency string, rate float64) string {
 	if t.Calls == 0 {
-		return "magpie\nToday: no requests yet"
+		return "magpie\n" + trayText(lang, "Today: no requests yet")
 	}
-	line := "Today: " + trayTokens(t) + "\n"
+	line := trayText(lang, "Today: %s", trayTokens(lang, t)) + "\n"
 	if t.Cost > 0 {
 		c := usage.FormatCost(t.Cost, currency, rate)
 		if t.Unpriced > 0 {
@@ -301,11 +347,11 @@ func trayIdleTip(t usage.Totals, currency string, rate float64) string {
 		}
 		line += "≈" + c + " · "
 	}
-	n := "requests"
+	word := "%d requests"
 	if t.Calls == 1 {
-		n = "request"
+		word = "%d request"
 	}
-	return fmt.Sprintf("magpie\n%s%d %s", line, t.Calls, n)
+	return "magpie\n" + line + trayText(lang, word, t.Calls)
 }
 
 // trayCount is a count as the Usage page says it in English: 133M, 1.2M,
@@ -439,10 +485,10 @@ func trayPlain(cells []trayCell) []trayCell {
 // trayUsageView is what the tray shows for the cards: a cell for each
 // that has a label, with its stable identity for clicks; labels joined by
 // " | " for a tray that shows text; and a tooltip spelling each out.
-func trayUsageView(cards []provider.SubscriptionQuota, now time.Time, left, pace bool) (cells []trayCell, label, tip string) {
+func trayUsageView(lang string, cards []provider.SubscriptionQuota, now time.Time, left, pace bool) (cells []trayCell, label, tip string) {
 	var labels, tips []string
 	for _, q := range cards {
-		l, t := trayUsageText(q, now, left, pace)
+		l, t := trayUsageText(lang, q, now, left, pace)
 		if t != "" {
 			tips = append(tips, t)
 		}

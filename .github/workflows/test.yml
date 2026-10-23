@@ -147,6 +147,21 @@ jobs:
         if: runner.os == 'Windows'
         run: go test -v -count=1 ./internal/agent -run '^TestVSCodeDetected$'
 
+  notes:
+    name: notes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Archived seals are append-only: compare against the commit before
+      # this change (HEAD already contains the new manifest).
+      - name: Verify agent notes
+        env:
+          AGENT_NOTE_ARCHIVE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: make verify-notes
+
   cli:
     name: cli (${{ matrix.goos }}/${{ matrix.goarch }}, nogui)
     strategy:

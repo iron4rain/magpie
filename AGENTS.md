@@ -11,6 +11,15 @@ semantic change description, and review rules.
 
 Write and review changes against the [code standards](docs/code-standards.md).
 
+## Agent notes
+
+Non-trivial changes — behavior, architecture, cross-file contracts, tooling,
+on-disk or wire formats, test strategy — carry a note under
+[`.agents/notes`](.agents/notes) saying why, what was rejected, and what it
+costs. Read [the skill](.agents/skills/write-notes-like-deepseek/SKILL.md)
+first; purely mechanical edits don't need one. `make verify-notes` checks the
+tree and format, and CI runs it.
+
 ## Community PRs
 
 Before reviewing a community PR, read [contributors](docs/contributors.md):

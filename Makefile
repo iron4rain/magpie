@@ -32,7 +32,7 @@ ifeq ($(shell go env GOOS),android)
   TAGS = nogui
 endif
 
-.PHONY: build cli install test test-ui app icons release release-cli release-windows release-linux clean dev dev-once
+.PHONY: build cli install test test-ui verify-notes app icons release release-cli release-windows release-linux clean dev dev-once
 
 build:
 	go build -tags "$(TAGS)" -trimpath -ldflags="$(LDFLAGS)" -o magpie .
@@ -55,6 +55,15 @@ UI_TEST_CONCURRENCY ?= 2
 test-ui:
 	@test -n "$(UI_TESTS)" || { echo "no GUI tests found under internal/gui/tests" >&2; exit 1; }
 	node --test --test-concurrency=$(UI_TEST_CONCURRENCY) $(UI_TESTS)
+
+# Agent Notes: why a non-trivial change was made, and what was rejected,
+# lives under .agents/notes. Node 22+ runs the TypeScript checks directly
+# (type stripping), so this needs no npm install.
+NOTES = .agents/skills/write-notes-like-deepseek/scripts
+verify-notes:
+	node --experimental-strip-types $(NOTES)/verify-agent-note-tree.ts
+	node --experimental-strip-types $(NOTES)/verify-agent-note-format.ts
+	node --experimental-strip-types $(NOTES)/verify-archived-agent-notes.ts
 
 # macOS bundle: menu bar app with no Dock icon (LSUIElement).
 app: build
